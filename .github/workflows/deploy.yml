@@ -1,10 +1,9 @@
-name: Deploy Static Website to S3
+name: Docker Deployment
 
 on:
   push:
     branches:
       - main
-
 
 jobs:
 
@@ -14,13 +13,13 @@ jobs:
 
     steps:
 
-    # Step 1: Get the code
-    - name: Checkout repository
+    # Checkout source code
+    - name: Checkout Code
       uses: actions/checkout@v4
 
 
-    # Step 2: Configure AWS credentials
-    - name: Configure AWS Credentials
+    # Configure AWS credentials
+    - name: Configure AWS
       uses: aws-actions/configure-aws-credentials@v4
 
       with:
@@ -31,11 +30,77 @@ jobs:
         aws-region: ap-south-1
 
 
-    # Step 3: Upload website files to S3
-    - name: Deploy website to S3
+    # Upload static files to S3
+    - name: Upload files to S3
       run: |
 
-        aws s3 sync . s3://new-bucket-k2 \
+        aws s3 sync ./ \
+        s3://kalyan-github-actions-bucket \
         --delete \
         --exclude ".git/*" \
         --exclude ".github/*"
+
+
+    # Copy project files to EC2
+    - name: Copy project to EC2
+      uses: appleboy/scp-action@v0.1.7
+
+      with:
+
+        host: ${{ secrets.EC2_HOST }}
+
+        username: ${{ secrets.EC2_USERNAME }}
+
+        key: ${{ secrets.EC2_SSH_KEY }}
+
+        source: "."
+
+        target: "/home/ec2-user/Furniture"
+
+
+
+    # Build and restart Docker container
+    - name: Deploy Docker Container
+      uses: appleboy/ssh-action@v1.0.3
+
+      with:
+
+        host: ${{ secrets.EC2_HOST }}
+
+        username: ${{ secrets.EC2_USERNAME }}
+
+        key: ${{ secrets.EC2_SSH_KEY }}
+
+        script: |
+
+          cd /home/ec2-user/Furniture
+
+
+          echo "Stopping old container..."
+
+          docker stop furniture-container || true
+
+
+          echo "Removing old container..."
+
+          docker rm furniture-container || true
+
+
+          echo "Building Docker image..."
+
+          docker build -t furniture-app .
+
+
+          echo "Starting new container..."
+
+          docker run -d \
+          --restart always \
+          -p 8080:80 \
+          --name furniture-container \
+          furniture-app
+
+
+          echo "Deployment completed"
+
+
+          docker ps
